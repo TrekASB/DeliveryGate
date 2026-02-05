@@ -5,19 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>DeliveryGate</title>
 
-  <!-- Trimble Connect Workspace API -->
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
-
-  <!-- jsPDF for PDF-rapport -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
   <style>
     :root { --b:#e5e7eb; --t:#111827; --m:#6b7280; --bg:#ffffff; --bg2:#f9fafb; }
     body { font-family: system-ui, Segoe UI, Arial; margin:0; color:var(--t); background:var(--bg); }
     header { padding:14px 18px; border-bottom:1px solid var(--b); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
-    header h1 { font-size:16px; margin:0; }
     header .pill { font-size:12px; color:var(--m); background:var(--bg2); border:1px solid var(--b); padding:4px 8px; border-radius:999px; }
-
     .brand { display:flex; align-items:center; gap:10px; margin-right:6px; }
     .brand img { height:22px; width:auto; display:block; }
     .brand .title { display:flex; flex-direction:column; line-height:1.1; }
@@ -31,16 +26,19 @@
     .card h2 { font-size:14px; margin:0; padding:12px 14px; border-bottom:1px solid var(--b); background:var(--bg2); }
     .card .content { padding:14px; display:grid; gap:12px; }
 
-    .kv { display:grid; grid-template-columns: 160px 1fr; gap:6px 10px; font-size:13px; }
-    .kv div:nth-child(odd){ color:var(--m); }
-
     .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     label { font-size:12px; color:var(--m); display:block; margin-bottom:4px; }
     input, select, textarea { width:100%; padding:10px; border:1px solid var(--b); border-radius:10px; font-size:13px; }
     textarea { min-height:88px; resize:vertical; }
+
     .btn { padding:10px 12px; border:1px solid var(--b); border-radius:10px; background:var(--bg2); cursor:pointer; font-size:13px; }
     .btn.primary { background:#111827; color:#fff; border-color:#111827; }
     .btn.danger { background:#fff; border-color:#ef4444; color:#b91c1c; }
+
+    .warn { border:1px solid #f59e0b55; background:#f59e0b10; padding:10px; border-radius:10px; font-size:12px; color:#92400e; }
+    .err { border:1px solid #ef444455; background:#ef444410; padding:10px; border-radius:10px; font-size:12px; color:#991b1b; }
+    .muted { color:var(--m); font-size:12px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; }
 
     table { width:100%; border-collapse:collapse; font-size:13px; }
     th, td { padding:10px 8px; border-bottom:1px solid var(--b); vertical-align:top; }
@@ -50,11 +48,14 @@
     .ok { border-color:#10b98155; background:#10b98115; }
     .no { border-color:#ef444455; background:#ef444415; }
     .na { border-color:#f59e0b55; background:#f59e0b15; }
-    .muted { color:var(--m); font-size:12px; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; }
-    .warn { border:1px solid #f59e0b55; background:#f59e0b10; padding:10px; border-radius:10px; font-size:12px; color:#92400e; }
-    .err { border:1px solid #ef444455; background:#ef444410; padding:10px; border-radius:10px; font-size:12px; color:#991b1b; }
-    a { color: inherit; }
+
+    .filelist { border:1px solid var(--b); border-radius:12px; overflow:hidden; }
+    .filelist .head { background:var(--bg2); border-bottom:1px solid var(--b); padding:10px 12px; font-size:12px; color:var(--m); display:flex; justify-content:space-between; }
+    .filelist ul { list-style:none; margin:0; padding:0; max-height:220px; overflow:auto; }
+    .filelist li { padding:10px 12px; border-bottom:1px solid var(--b); font-size:13px; display:flex; gap:8px; align-items:center; justify-content:space-between; }
+    .filelist li:last-child { border-bottom:none; }
+    .filelist .name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 78%; }
+    .filelist .mini { font-size:12px; color:var(--m); }
   </style>
 </head>
 
@@ -64,27 +65,19 @@
     <img src="./norconsult-logo-black.png" alt="Norconsult" />
     <div class="title">
       <b>DeliveryGate</b>
-      <span>Document Workflow / QA</span>
+      <span>Explorer-basert QA / Document workflow</span>
     </div>
   </div>
 
   <span class="pill" id="pillProject">Prosjekt: –</span>
   <span class="pill" id="pillUser">Bruker: –</span>
-  <span class="pill" id="pillFile">Fil: (velg en fil)</span>
+  <span class="pill" id="pillSelection">Valgte filer: 0</span>
 </header>
 
 <main>
   <section class="card">
-    <h2>Workflow-logg (per fil + versjon)</h2>
+    <h2>Valgte filer og workflow</h2>
     <div class="content">
-      <div class="row">
-        <button class="btn" id="btnNew">Start ny workflow for valgt fil/versjon</button>
-        <button class="btn" id="btnExport">Eksporter JSON</button>
-        <button class="btn" id="btnImport">Importer JSON</button>
-        <button class="btn" id="btnReportPdf">QA-rapport PDF</button>
-        <button class="btn" id="btnReportJson">Release-ready JSON-pakke</button>
-        <button class="btn danger" id="btnClear">Slett workflow (kun denne fil/versjon)</button>
-      </div>
 
       <div class="warn">
         <b>Regelsett:</b>
@@ -95,38 +88,64 @@
         </ul>
       </div>
 
-      <div id="noFile" class="muted">
-        Velg en fil i Trimble Connect File Explorer. Extension lytter på <span class="mono">extension.fileSelected</span>.
+      <div class="row">
+        <button class="btn" id="btnPullSelection">Hent valgte filer fra Explorer</button>
+        <button class="btn primary" id="btnStartForAll">Start kontroll (opprett workflow for alle valgte)</button>
+        <button class="btn" id="btnReportJsonAll">Release-ready JSON (alle)</button>
+        <button class="btn" id="btnReportPdfActive">QA-PDF (aktiv fil)</button>
       </div>
 
-      <div id="logWrap" style="display:none">
-        <div class="muted">
-          Nøkkel: <span class="mono" id="keyLabel">–</span>
+      <div class="filelist">
+        <div class="head">
+          <span>Valgte filer</span>
+          <span class="mini" id="activeHint">Aktiv: –</span>
         </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>Steg</th>
-              <th>Status</th>
-              <th>Utført av</th>
-              <th>Tidspunkt</th>
-              <th>Kommentar</th>
-            </tr>
-          </thead>
-          <tbody id="logBody"></tbody>
-        </table>
+        <ul id="fileUl">
+          <li class="muted">Velg én eller flere filer i Explorer.</li>
+        </ul>
       </div>
+
+      <div class="muted">
+        Tips: Marker fil(er) i Explorer og åpne/hold extension åpen. Denne extensionen lytter på selection-events fra Explorer.
+      </div>
+
+      <div class="card" style="border-radius:12px;">
+        <h2>Workflow-logg (aktiv fil + versjon)</h2>
+        <div class="content">
+          <div class="row">
+            <button class="btn" id="btnNewActive">Start ny workflow (aktiv fil)</button>
+            <button class="btn" id="btnExportActive">Eksporter workflow JSON (aktiv fil)</button>
+            <button class="btn danger" id="btnClearActive">Slett workflow (aktiv fil)</button>
+          </div>
+
+          <div class="muted">Nøkkel: <span class="mono" id="keyLabel">–</span></div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Steg</th><th>Status</th><th>Utført av</th><th>Tidspunkt</th><th>Kommentar</th>
+              </tr>
+            </thead>
+            <tbody id="logBody">
+              <tr><td colspan="5" class="muted">Ingen aktiv fil valgt ennå.</td></tr>
+            </tbody>
+          </table>
+
+          <div id="ruleMsg" class="err" style="display:none"></div>
+        </div>
+      </div>
+
     </div>
   </section>
 
   <aside class="card">
     <h2>Registrer kontroll</h2>
     <div class="content">
-      <div class="kv">
-        <div>Filnavn</div><div id="metaName">–</div>
-        <div>Fil-ID</div><div class="mono" id="metaId">–</div>
-        <div>Versjon-ID</div><div class="mono" id="metaVer">–</div>
+
+      <div>
+        <label for="activeFileSelect">Aktiv fil (fra Explorer-utvalg)</label>
+        <select id="activeFileSelect"></select>
+        <div class="muted">Signering gjelder alltid “aktiv fil”.</div>
       </div>
 
       <div class="row" style="width:100%">
@@ -152,38 +171,27 @@
 
       <div id="bcfWrap" style="display:none">
         <label for="bcfLink">BCF Topic (påkrevd ved IKKE OK)</label>
-        <input id="bcfLink" placeholder="Lim inn URL til topic, eller skriv Topic-ID (f.eks. BCF-1234)" />
-        <div class="muted">Tips: bruk direkte lenke til topic i Trimble Connect / BCF-verktøyet dere bruker.</div>
+        <input id="bcfLink" placeholder="URL eller Topic-ID (f.eks. BCF-1234)" />
       </div>
 
       <div>
         <label for="comment">Kommentar / funn</label>
-        <textarea id="comment" placeholder="Kort beskrivelse av hva som er sjekket og eventuelle avvik..."></textarea>
+        <textarea id="comment" placeholder="Hva er sjekket og ev. avvik..."></textarea>
       </div>
 
-      <div id="ruleMsg" class="err" style="display:none"></div>
-
       <div class="row">
-        <button class="btn primary" id="btnSign">Signér steg</button>
+        <button class="btn primary" id="btnSign">Signér steg (aktiv fil)</button>
         <button class="btn" id="btnToken">Hent accessToken (valgfritt)</button>
       </div>
 
       <div class="muted" id="tokenInfo" style="display:none"></div>
+
     </div>
   </aside>
 </main>
 
 <script>
   let API = null;
-
-  const state = {
-    project: null,
-    user: null,
-    selectedFile: null,
-    storageKey: null,
-    workflow: null,
-    accessToken: null
-  };
 
   const STEPS = [
     { key: "egenkontroll", label: "Egenkontroll" },
@@ -192,43 +200,46 @@
     { key: "godkjenning", label: "Godkjenning" }
   ];
 
-  function nowISO(){ return new Date().toISOString(); }
+  const state = {
+    project: null,
+    user: null,
+    selectedFiles: [],     // [{id,name,versionId}]
+    activeFileKey: null,   // derived key for active file
+    activeFile: null,      // object from selectedFiles
+    workflow: null,
+    accessToken: null
+  };
 
-  function safeUserDisplay(u){
-    if (!u) return "Ukjent";
-    return u.name || u.displayName || u.email || u.userName || "Ukjent";
-  }
+  function nowISO(){ return new Date().toISOString(); }
+  function safeUserDisplay(u){ return u?.name || u?.displayName || u?.email || u?.userName || "Ukjent"; }
 
   function buildStorageKey(projectId, fileId, versionId){
     return `deliverygate::${projectId}::${fileId}::${versionId || "noVersion"}`;
   }
-
   function loadWorkflow(key){
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
   }
+  function saveWorkflow(key, wf){ localStorage.setItem(key, JSON.stringify(wf)); }
 
-  function saveWorkflow(key, wf){
-    localStorage.setItem(key, JSON.stringify(wf));
-  }
-
-  function newWorkflowForSelected(){
-    if (!state.project || !state.selectedFile) return null;
+  function newWorkflowFor(fileObj){
     return {
-      schema: "deliverygate-workflow-v1",
+      schema: "deliverygate-workflow-v2",
       createdAt: nowISO(),
       createdBy: safeUserDisplay(state.user),
       fileMeta: {
         projectId: state.project.id,
         projectName: state.project.name,
-        fileId: state.selectedFile.id,
-        versionId: state.selectedFile.versionId || null,
-        name: state.selectedFile.name
+        fileId: fileObj.id,
+        versionId: fileObj.versionId || null,
+        name: fileObj.name
       },
       steps: { egenkontroll:null, sidemann:null, kollisjon:null, godkjenning:null },
       history: []
     };
   }
+
+  function isOk(stepObj){ return stepObj && stepObj.result === "OK"; }
 
   function statusTag(result){
     if (result === "OK") return `<span class="tag ok">OK</span>`;
@@ -247,26 +258,10 @@
     el.textContent = "";
   }
 
-  function escapeHtml(s){
-    return (s ?? "").toString()
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+  function toggleBcfUI(){
+    const res = document.getElementById("result").value;
+    document.getElementById("bcfWrap").style.display = (res === "IKKE_OK") ? "block" : "none";
   }
-  function escapeAttr(s){ return escapeHtml(s).replaceAll("`",""); }
-
-  function downloadText(filename, text, mime="application/json"){
-    const blob = new Blob([text], { type: mime });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = filename.replace(/[^\w.\-() ]+/g, "_");
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-
-  function isOk(stepObj){ return stepObj && stepObj.result === "OK"; }
 
   function validateRules(stepKey, result, bcfLink){
     if (result === "IKKE_OK" && (!bcfLink || !bcfLink.trim())){
@@ -292,9 +287,137 @@
     return null;
   }
 
-  function buildReleasePackage(){
-    const wf = state.workflow;
-    if (!wf) return null;
+  function setSelectedFiles(files){
+    // dedupe by (id+versionId)
+    const map = new Map();
+    for (const f of (files || [])){
+      if (!f?.id) continue;
+      const vid = f.versionId || f.versionID || null;
+      const key = `${f.id}::${vid || "noVersion"}`;
+      map.set(key, { id: f.id, name: f.name || f.fileName || "Ukjent fil", versionId: vid });
+    }
+    state.selectedFiles = Array.from(map.values());
+
+    document.getElementById("pillSelection").textContent = `Valgte filer: ${state.selectedFiles.length}`;
+
+    // populate active dropdown
+    const sel = document.getElementById("activeFileSelect");
+    sel.innerHTML = "";
+    if (!state.selectedFiles.length){
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "— ingen filer valgt —";
+      sel.appendChild(opt);
+      state.activeFile = null;
+      state.activeFileKey = null;
+      state.workflow = null;
+      renderFileList();
+      renderActive();
+      return;
+    }
+
+    for (const f of state.selectedFiles){
+      const opt = document.createElement("option");
+      opt.value = `${f.id}::${f.versionId || "noVersion"}`;
+      opt.textContent = `${f.name}${f.versionId ? "" : " (ingen versionId)"}`;
+      sel.appendChild(opt);
+    }
+
+    // keep active if possible
+    const desired = state.activeFileKey || sel.options[0].value;
+    sel.value = Array.from(sel.options).some(o => o.value === desired) ? desired : sel.options[0].value;
+    onActiveChanged();
+    renderFileList();
+  }
+
+  function onActiveChanged(){
+    const sel = document.getElementById("activeFileSelect");
+    const val = sel.value;
+    state.activeFileKey = val || null;
+
+    const [id, vidRaw] = (val || "").split("::");
+    const vid = (vidRaw === "noVersion") ? null : vidRaw;
+
+    state.activeFile = state.selectedFiles.find(f => f.id === id && ((f.versionId || null) === (vid || null))) || null;
+
+    if (state.activeFile){
+      const key = buildStorageKey(state.project?.id ?? "noProject", state.activeFile.id, state.activeFile.versionId);
+      state.workflow = loadWorkflow(key);
+      document.getElementById("activeHint").textContent = `Aktiv: ${state.activeFile.name}`;
+      document.getElementById("keyLabel").textContent = key;
+    } else {
+      state.workflow = null;
+      document.getElementById("activeHint").textContent = "Aktiv: –";
+      document.getElementById("keyLabel").textContent = "–";
+    }
+
+    clearRuleError();
+    renderActive();
+    renderFileList();
+  }
+
+  function renderFileList(){
+    const ul = document.getElementById("fileUl");
+    ul.innerHTML = "";
+
+    if (!state.selectedFiles.length){
+      ul.innerHTML = `<li class="muted">Velg én eller flere filer i Explorer.</li>`;
+      return;
+    }
+
+    for (const f of state.selectedFiles){
+      const li = document.createElement("li");
+      const isActive = state.activeFile && f.id === state.activeFile.id && (f.versionId || null) === (state.activeFile.versionId || null);
+      const key = buildStorageKey(state.project?.id ?? "noProject", f.id, f.versionId);
+
+      const wf = loadWorkflow(key);
+      const ready = wf?.steps?.godkjenning && isOk(wf?.steps?.kollisjon);
+
+      li.innerHTML = `
+        <div class="name" title="${escapeHtml(f.name)}">${isActive ? "▶ " : ""}${escapeHtml(f.name)}</div>
+        <div class="mini">${ready ? "✅" : (wf ? "📝" : "—")}</div>
+      `;
+      li.style.cursor = "pointer";
+      li.addEventListener("click", () => {
+        document.getElementById("activeFileSelect").value = `${f.id}::${f.versionId || "noVersion"}`;
+        onActiveChanged();
+      });
+      ul.appendChild(li);
+    }
+  }
+
+  function escapeHtml(s){
+    return (s ?? "").toString()
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function downloadText(filename, text, mime="application/json"){
+    const blob = new Blob([text], { type: mime });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename.replace(/[^\w.\-() ]+/g, "_");
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function buildReleasePackageFor(fileObj){
+    const key = buildStorageKey(state.project?.id ?? "noProject", fileObj.id, fileObj.versionId);
+    const wf = loadWorkflow(key);
+    if (!wf){
+      return {
+        schema: "deliverygate-release-package-v2",
+        generatedAt: nowISO(),
+        generatedBy: safeUserDisplay(state.user),
+        releaseReady: false,
+        issues: ["Ingen workflow funnet"],
+        workflow: null,
+        fileMeta: { name: fileObj.name, fileId: fileObj.id, versionId: fileObj.versionId || null }
+      };
+    }
 
     const ready =
       !!wf.steps.egenkontroll &&
@@ -307,13 +430,11 @@
     for (const s of STEPS){
       const step = wf.steps[s.key];
       if (!step) issues.push(`${s.label}: mangler signering`);
-      else if (step.result === "IKKE_OK"){
-        issues.push(`${s.label}: IKKE OK (BCF: ${step.bcfLink || "mangler"})`);
-      }
+      else if (step.result === "IKKE_OK") issues.push(`${s.label}: IKKE OK (BCF: ${step.bcfLink || "mangler"})`);
     }
 
     return {
-      schema: "deliverygate-release-package-v1",
+      schema: "deliverygate-release-package-v2",
       generatedAt: nowISO(),
       generatedBy: safeUserDisplay(state.user),
       releaseReady: ready,
@@ -322,10 +443,14 @@
     };
   }
 
-  function generatePdfReport(pkg){
+  function generatePdfReportForActive(){
+    if (!state.activeFile) return alert("Velg aktiv fil først.");
+    const pkg = buildReleasePackageFor(state.activeFile);
+    const wf = pkg.workflow;
+    if (!wf) return alert("Ingen workflow for aktiv fil.");
+
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "pt", format: "a4" });
-
     const margin = 40;
     let y = margin;
 
@@ -335,16 +460,12 @@
       const width = 595 - margin*2;
       const lines = doc.splitTextToSize(txt, width);
       for (const l of lines){
-        if (y > 842 - margin){
-          doc.addPage();
-          y = margin;
-        }
+        if (y > 842 - margin){ doc.addPage(); y = margin; }
         doc.text(l, margin, y);
         y += size + 6;
       }
     };
 
-    const wf = pkg.workflow;
     line("DeliveryGate – QA-rapport", 16, true);
     line(`Generert: ${pkg.generatedAt}`, 10);
     line(`Generert av: ${pkg.generatedBy}`, 10);
@@ -361,9 +482,7 @@
     line(`Release-ready: ${pkg.releaseReady ? "JA" : "NEI"}`, 11, true);
     if (pkg.issues?.length){
       line("Avvik / mangler:", 11, true);
-      for (const it of pkg.issues){
-        line(`- ${it}`, 10);
-      }
+      for (const it of pkg.issues){ line(`- ${it}`, 10); }
     } else {
       line("Ingen registrerte avvik.", 10);
     }
@@ -385,119 +504,172 @@
       y += 4;
     }
 
-    y += 6;
-    line("Historikk", 12, true);
-    const hist = wf.history || [];
-    if (!hist.length){
-      line("Ingen historikk.", 10);
-    } else {
-      for (const h of hist){
-        line(`- ${h.at} | ${h.stepLabel} | ${h.result} | ${h.by}`, 9);
-        if (h.comment) line(`  Kommentar: ${h.comment}`, 9);
-        if (h.bcfLink) line(`  BCF: ${h.bcfLink}`, 9);
-      }
-    }
-
     const fname = `DeliveryGate_QA-rapport_${wf.fileMeta.name}_${wf.fileMeta.versionId || "noVersion"}.pdf`;
     doc.save(fname.replace(/[^\w.\-() ]+/g, "_"));
   }
 
-  function toggleBcfUI(){
-    const res = document.getElementById("result").value;
-    document.getElementById("bcfWrap").style.display = (res === "IKKE_OK") ? "block" : "none";
-  }
-
-  function render(){
+  function renderActive(){
     document.getElementById("pillProject").textContent = `Prosjekt: ${state.project?.name ?? "–"}`;
     document.getElementById("pillUser").textContent = `Bruker: ${safeUserDisplay(state.user)}`;
-
-    const hasFile = !!state.selectedFile;
-    document.getElementById("noFile").style.display = hasFile ? "none" : "block";
-    document.getElementById("logWrap").style.display = hasFile ? "block" : "none";
-    document.getElementById("pillFile").textContent = hasFile ? `Fil: ${state.selectedFile.name}` : "Fil: (velg en fil)";
-
-    document.getElementById("metaName").textContent = hasFile ? state.selectedFile.name : "–";
-    document.getElementById("metaId").textContent = hasFile ? (state.selectedFile.id || "–") : "–";
-    document.getElementById("metaVer").textContent = hasFile ? (state.selectedFile.versionId || "–") : "–";
-    document.getElementById("keyLabel").textContent = state.storageKey || "–";
 
     const tbody = document.getElementById("logBody");
     tbody.innerHTML = "";
 
-    if (!hasFile) return;
+    if (!state.activeFile){
+      tbody.innerHTML = `<tr><td colspan="5" class="muted">Velg aktiv fil i dropdown eller klikk på fil i listen.</td></tr>`;
+      return;
+    }
 
     const wf = state.workflow;
     if (!wf){
-      tbody.innerHTML = `<tr><td colspan="5" class="muted">Ingen workflow funnet. Klikk "Start ny workflow".</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="muted">Ingen workflow funnet for aktiv fil. Klikk "Start ny workflow (aktiv fil)".</td></tr>`;
       return;
     }
 
     for (const s of STEPS){
       const step = wf.steps[s.key];
       const tr = document.createElement("tr");
-      const comment = step?.comment || "";
-      const bcf = step?.bcfLink ? `<div class="muted">BCF: <a href="${escapeAttr(step.bcfLink)}" target="_blank">${escapeHtml(step.bcfLink)}</a></div>` : "";
+      const bcf = step?.bcfLink ? `<div class="muted">BCF: ${escapeHtml(step.bcfLink)}</div>` : "";
       tr.innerHTML = `
         <td>${s.label}</td>
         <td>${step ? statusTag(step.result) : `<span class="tag">Ikke signert</span>`}</td>
         <td>${step ? escapeHtml(step.by || "–") : "–"}</td>
         <td>${step ? escapeHtml(step.at || "–") : "–"}</td>
-        <td>${escapeHtml(comment)} ${bcf}</td>
+        <td>${step ? escapeHtml(step.comment || "") : ""} ${bcf}</td>
       `;
       tbody.appendChild(tr);
     }
   }
 
+  function normalizeIncomingSelection(data){
+    // Try to be robust across event payloads:
+    // - data.files
+    // - data.selectedFiles
+    // - data.file (single)
+    // - data (single)
+    const files =
+      data?.files ||
+      data?.selectedFiles ||
+      (data?.file ? [data.file] : null) ||
+      (data?.id ? [data] : null) ||
+      [];
+
+    return files.map(f => ({
+      id: f.id,
+      name: f.name || f.fileName,
+      versionId: f.versionId || f.versionID || null
+    })).filter(f => f.id);
+  }
+
+  async function pullSelectionFromAPI(){
+    // Best-effort: noen Workspaces har en metode for selection/context.
+    // Vi prøver flere uten å feile hvis de ikke finnes.
+    try{
+      if (API?.files?.getSelectedFiles){
+        const res = await API.files.getSelectedFiles();
+        return normalizeIncomingSelection({ files: res });
+      }
+    }catch(e){}
+
+    try{
+      if (API?.extension?.getSelection){
+        const res = await API.extension.getSelection();
+        return normalizeIncomingSelection(res);
+      }
+    }catch(e){}
+
+    return null;
+  }
+
   async function init(){
     API = await TrimbleConnectWorkspace.connect(window.parent, async (event, data) => {
-      if (event === "extension.fileSelected" || event === "extension.fileViewClicked") {
-        const f = data?.file ?? data;
-        if (f?.id){
-          state.selectedFile = {
-            id: f.id,
-            name: f.name || f.fileName || "Ukjent fil",
-            versionId: f.versionId || f.versionID || null
-          };
-          state.storageKey = buildStorageKey(state.project?.id ?? "noProject", state.selectedFile.id, state.selectedFile.versionId);
-          state.workflow = loadWorkflow(state.storageKey);
-          clearRuleError();
-          render();
+      const interesting = [
+        "extension.filesSelected",
+        "extension.selectionChanged",
+        "extension.fileSelected",
+        "extension.fileViewClicked"
+      ];
+      if (interesting.includes(event)){
+        const sel = normalizeIncomingSelection(data);
+        if (sel.length){
+          setSelectedFiles(sel);
         }
       }
     });
 
     state.project = await API.project.getProject();
     state.user = await API.user.getUser();
-    render();
 
+    document.getElementById("activeFileSelect").addEventListener("change", onActiveChanged);
     document.getElementById("result").addEventListener("change", toggleBcfUI);
     toggleBcfUI();
 
-    document.getElementById("btnNew").addEventListener("click", () => {
-      if (!state.selectedFile) return alert("Velg en fil først.");
-      state.workflow = newWorkflowForSelected();
-      saveWorkflow(state.storageKey, state.workflow);
-      clearRuleError();
-      render();
+    // Button: pull selection explicitly
+    document.getElementById("btnPullSelection").addEventListener("click", async () => {
+      const sel = await pullSelectionFromAPI();
+      if (sel && sel.length) setSelectedFiles(sel);
+      else alert("Fant ingen valgte filer via API. Marker filer i Explorer og prøv igjen.");
     });
 
-    document.getElementById("btnClear").addEventListener("click", () => {
-      if (!state.storageKey) return;
-      if (!confirm("Slette workflow for denne fil/versjon?")) return;
-      localStorage.removeItem(state.storageKey);
+    // Start workflow for all selected
+    document.getElementById("btnStartForAll").addEventListener("click", () => {
+      if (!state.selectedFiles.length) return alert("Velg én eller flere filer i Explorer først.");
+      for (const f of state.selectedFiles){
+        const key = buildStorageKey(state.project.id, f.id, f.versionId);
+        const existing = loadWorkflow(key);
+        if (!existing){
+          saveWorkflow(key, newWorkflowFor(f));
+        }
+      }
+      onActiveChanged();
+      renderFileList();
+      alert("Workflow opprettet for valgte filer (der det ikke fantes fra før).");
+    });
+
+    // Start new workflow for active
+    document.getElementById("btnNewActive").addEventListener("click", () => {
+      if (!state.activeFile) return alert("Velg aktiv fil først.");
+      const key = buildStorageKey(state.project.id, state.activeFile.id, state.activeFile.versionId);
+      saveWorkflow(key, newWorkflowFor(state.activeFile));
+      state.workflow = loadWorkflow(key);
+      clearRuleError();
+      renderActive();
+      renderFileList();
+    });
+
+    document.getElementById("btnExportActive").addEventListener("click", () => {
+      if (!state.activeFile) return alert("Velg aktiv fil først.");
+      const key = buildStorageKey(state.project.id, state.activeFile.id, state.activeFile.versionId);
+      const wf = loadWorkflow(key);
+      if (!wf) return alert("Ingen workflow å eksportere for aktiv fil.");
+      downloadText(`DeliveryGate_workflow_${state.activeFile.name}.json`, JSON.stringify(wf, null, 2));
+    });
+
+    document.getElementById("btnClearActive").addEventListener("click", () => {
+      if (!state.activeFile) return alert("Velg aktiv fil først.");
+      const key = buildStorageKey(state.project.id, state.activeFile.id, state.activeFile.versionId);
+      if (!confirm("Slette workflow for aktiv fil?")) return;
+      localStorage.removeItem(key);
       state.workflow = null;
       clearRuleError();
-      render();
+      renderActive();
+      renderFileList();
     });
 
+    // Sign step for active
     document.getElementById("btnSign").addEventListener("click", () => {
       clearRuleError();
-      if (!state.selectedFile) return alert("Velg en fil først.");
+      if (!state.activeFile) return alert("Velg aktiv fil først.");
 
-      if (!state.workflow){
+      const key = buildStorageKey(state.project.id, state.activeFile.id, state.activeFile.versionId);
+      let wf = loadWorkflow(key);
+      if (!wf){
         if (!confirm("Ingen workflow funnet. Opprette ny nå?")) return;
-        state.workflow = newWorkflowForSelected();
+        wf = newWorkflowFor(state.activeFile);
       }
+
+      // update state.workflow (important for rule validation)
+      state.workflow = wf;
 
       const stepKey = document.getElementById("step").value;
       const result = document.getElementById("result").value;
@@ -509,65 +681,45 @@
       if (ruleErr){ showRuleError(ruleErr); return; }
 
       const signed = {
-        stepKey,
-        stepLabel,
-        result,
-        comment,
+        stepKey, stepLabel, result, comment,
         bcfLink: (result === "IKKE_OK") ? bcfLink : "",
         at: nowISO(),
         by: safeUserDisplay(state.user)
       };
 
-      state.workflow.steps[stepKey] = signed;
-      state.workflow.history = state.workflow.history || [];
-      state.workflow.history.push(signed);
+      wf.steps[stepKey] = signed;
+      wf.history = wf.history || [];
+      wf.history.push(signed);
 
-      saveWorkflow(state.storageKey, state.workflow);
+      saveWorkflow(key, wf);
+      state.workflow = wf;
 
       document.getElementById("comment").value = "";
       document.getElementById("bcfLink").value = "";
       toggleBcfUI();
-      render();
+
+      renderActive();
+      renderFileList();
     });
 
-    document.getElementById("btnExport").addEventListener("click", () => {
-      if (!state.workflow) return alert("Ingen workflow å eksportere.");
-      downloadText(`DeliveryGate_workflow_${state.selectedFile?.name || "file"}.json`, JSON.stringify(state.workflow, null, 2));
-    });
-
-    document.getElementById("btnImport").addEventListener("click", async () => {
-      if (!state.selectedFile) return alert("Velg en fil først.");
-      const inp = document.createElement("input");
-      inp.type = "file";
-      inp.accept = "application/json";
-      inp.onchange = async () => {
-        const file = inp.files?.[0];
-        if (!file) return;
-        const text = await file.text();
-        const obj = JSON.parse(text);
-        if (!obj?.schema?.startsWith("deliverygate-")) return alert("Ugyldig fil (schema mismatch).");
-        state.workflow = obj;
-        saveWorkflow(state.storageKey, state.workflow);
-        clearRuleError();
-        render();
+    // Release-ready JSON for all selected
+    document.getElementById("btnReportJsonAll").addEventListener("click", () => {
+      if (!state.selectedFiles.length) return alert("Velg filer i Explorer først.");
+      const pkgs = state.selectedFiles.map(f => buildReleasePackageFor(f));
+      const bundle = {
+        schema: "deliverygate-release-bundle-v1",
+        project: { id: state.project.id, name: state.project.name },
+        generatedAt: nowISO(),
+        generatedBy: safeUserDisplay(state.user),
+        items: pkgs
       };
-      inp.click();
+      downloadText(`DeliveryGate_release-bundle_${state.project.name}.json`, JSON.stringify(bundle, null, 2));
     });
 
-    document.getElementById("btnReportJson").addEventListener("click", () => {
-      if (!state.workflow) return alert("Ingen workflow å rapportere.");
-      const pkg = buildReleasePackage();
-      downloadText(
-        `DeliveryGate_release-package_${state.selectedFile?.name || "file"}_${state.selectedFile?.versionId || "noVersion"}.json`,
-        JSON.stringify(pkg, null, 2)
-      );
-    });
+    // PDF for active
+    document.getElementById("btnReportPdfActive").addEventListener("click", generatePdfReportForActive);
 
-    document.getElementById("btnReportPdf").addEventListener("click", () => {
-      if (!state.workflow) return alert("Ingen workflow å rapportere.");
-      generatePdfReport(buildReleasePackage());
-    });
-
+    // token
     document.getElementById("btnToken").addEventListener("click", async () => {
       try{
         state.accessToken = await API.extension.requestPermission("accesstoken");
@@ -578,6 +730,17 @@
         alert("Kunne ikke hente token. Sjekk extension permissions.");
       }
     });
+
+    // initial best-effort fetch selection (if extension opened after selection)
+    const initial = await pullSelectionFromAPI();
+    if (initial && initial.length) setSelectedFiles(initial);
+    else {
+      document.getElementById("pillSelection").textContent = "Valgte filer: 0";
+      setSelectedFiles([]);
+    }
+
+    renderActive();
+    renderFileList();
   }
 
   init().catch(err => {
