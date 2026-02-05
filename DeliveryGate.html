@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>DeliveryGate</title>
 
+  <!-- Trimble Connect Workspace API -->
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
+
+  <!-- jsPDF for PDF-rapport -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
   <style>
@@ -30,7 +33,6 @@
     label { font-size:12px; color:var(--m); display:block; margin-bottom:4px; }
     input, select, textarea { width:100%; padding:10px; border:1px solid var(--b); border-radius:10px; font-size:13px; }
     textarea { min-height:88px; resize:vertical; }
-
     .btn { padding:10px 12px; border:1px solid var(--b); border-radius:10px; background:var(--bg2); cursor:pointer; font-size:13px; }
     .btn.primary { background:#111827; color:#fff; border-color:#111827; }
     .btn.danger { background:#fff; border-color:#ef4444; color:#b91c1c; }
@@ -56,6 +58,7 @@
     .filelist li:last-child { border-bottom:none; }
     .filelist .name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 78%; }
     .filelist .mini { font-size:12px; color:var(--m); }
+    a { color: inherit; }
   </style>
 </head>
 
@@ -65,7 +68,7 @@
     <img src="./norconsult-logo-black.png" alt="Norconsult" />
     <div class="title">
       <b>DeliveryGate</b>
-      <span>Explorer-basert QA / Document workflow</span>
+      <span>QA / Release gate (Explorer + 3D)</span>
     </div>
   </div>
 
@@ -89,24 +92,21 @@
       </div>
 
       <div class="row">
-        <button class="btn" id="btnPullSelection">Hent valgte filer fra Explorer</button>
-        <button class="btn primary" id="btnStartForAll">Start kontroll (opprett workflow for alle valgte)</button>
+        <button class="btn" id="btnPullSelection">Hent valgte filer (Explorer)</button>
+        <button class="btn" id="btnUseLoaded3D">Bruk lastede modeller (3D)</button>
+        <button class="btn primary" id="btnStartForAll">Start kontroll (opprett workflow for alle)</button>
         <button class="btn" id="btnReportJsonAll">Release-ready JSON (alle)</button>
         <button class="btn" id="btnReportPdfActive">QA-PDF (aktiv fil)</button>
       </div>
 
       <div class="filelist">
         <div class="head">
-          <span>Valgte filer</span>
+          <span>Utvalg (Explorer/3D)</span>
           <span class="mini" id="activeHint">Aktiv: –</span>
         </div>
         <ul id="fileUl">
-          <li class="muted">Velg én eller flere filer i Explorer.</li>
+          <li class="muted">Velg filer i Explorer eller bruk 3D-knappen.</li>
         </ul>
-      </div>
-
-      <div class="muted">
-        Tips: Marker fil(er) i Explorer og åpne/hold extension åpen. Denne extensionen lytter på selection-events fra Explorer.
       </div>
 
       <div class="card" style="border-radius:12px;">
@@ -143,7 +143,7 @@
     <div class="content">
 
       <div>
-        <label for="activeFileSelect">Aktiv fil (fra Explorer-utvalg)</label>
+        <label for="activeFileSelect">Aktiv fil (fra utvalg)</label>
         <select id="activeFileSelect"></select>
         <div class="muted">Signering gjelder alltid “aktiv fil”.</div>
       </div>
@@ -203,9 +203,9 @@
   const state = {
     project: null,
     user: null,
-    selectedFiles: [],     // [{id,name,versionId}]
-    activeFileKey: null,   // derived key for active file
-    activeFile: null,      // object from selectedFiles
+    selectedFiles: [],   // [{id,name,versionId}]
+    activeFileKey: null, // `${id}::${versionId||noVersion}`
+    activeFile: null,
     workflow: null,
     accessToken: null
   };
@@ -224,7 +224,7 @@
 
   function newWorkflowFor(fileObj){
     return {
-      schema: "deliverygate-workflow-v2",
+      schema: "deliverygate-workflow-v3",
       createdAt: nowISO(),
       createdBy: safeUserDisplay(state.user),
       fileMeta: {
@@ -287,22 +287,56 @@
     return null;
   }
 
+  function escapeHtml(s){
+    return (s ?? "").toString()
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function downloadText(filename, text, mime="application/json"){
+    const blob = new Blob([text], { type: mime });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename.replace(/[^\w.\-() ]+/g, "_");
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  // ---------- Selection handling (Explorer + viewer) ----------
+
+  function normalizeIncomingSelection(data){
+    const files =
+      data?.files ||
+      data?.selectedFiles ||
+      (data?.file ? [data.file] : null) ||
+      (data?.id ? [data] : null) ||
+      [];
+
+    return files.map(f => ({
+      id: f.id,
+      name: f.name || f.fileName,
+      versionId: f.versionId || f.versionID || null
+    })).filter(f => f.id);
+  }
+
   function setSelectedFiles(files){
-    // dedupe by (id+versionId)
     const map = new Map();
     for (const f of (files || [])){
       if (!f?.id) continue;
-      const vid = f.versionId || f.versionID || null;
-      const key = `${f.id}::${vid || "noVersion"}`;
-      map.set(key, { id: f.id, name: f.name || f.fileName || "Ukjent fil", versionId: vid });
+      const vid = f.versionId || null;
+      const k = `${f.id}::${vid || "noVersion"}`;
+      map.set(k, { id: f.id, name: f.name || "Ukjent fil", versionId: vid });
     }
     state.selectedFiles = Array.from(map.values());
 
     document.getElementById("pillSelection").textContent = `Valgte filer: ${state.selectedFiles.length}`;
 
-    // populate active dropdown
     const sel = document.getElementById("activeFileSelect");
     sel.innerHTML = "";
+
     if (!state.selectedFiles.length){
       const opt = document.createElement("option");
       opt.value = "";
@@ -323,7 +357,6 @@
       sel.appendChild(opt);
     }
 
-    // keep active if possible
     const desired = state.activeFileKey || sel.options[0].value;
     sel.value = Array.from(sel.options).some(o => o.value === desired) ? desired : sel.options[0].value;
     onActiveChanged();
@@ -361,7 +394,7 @@
     ul.innerHTML = "";
 
     if (!state.selectedFiles.length){
-      ul.innerHTML = `<li class="muted">Velg én eller flere filer i Explorer.</li>`;
+      ul.innerHTML = `<li class="muted">Velg filer i Explorer eller bruk 3D-knappen.</li>`;
       return;
     }
 
@@ -369,7 +402,6 @@
       const li = document.createElement("li");
       const isActive = state.activeFile && f.id === state.activeFile.id && (f.versionId || null) === (state.activeFile.versionId || null);
       const key = buildStorageKey(state.project?.id ?? "noProject", f.id, f.versionId);
-
       const wf = loadWorkflow(key);
       const ready = wf?.steps?.godkjenning && isOk(wf?.steps?.kollisjon);
 
@@ -386,30 +418,122 @@
     }
   }
 
-  function escapeHtml(s){
-    return (s ?? "").toString()
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+  function renderActive(){
+    document.getElementById("pillProject").textContent = `Prosjekt: ${state.project?.name ?? "–"}`;
+    document.getElementById("pillUser").textContent = `Bruker: ${safeUserDisplay(state.user)}`;
+
+    const tbody = document.getElementById("logBody");
+    tbody.innerHTML = "";
+
+    if (!state.activeFile){
+      tbody.innerHTML = `<tr><td colspan="5" class="muted">Velg aktiv fil i dropdown eller klikk på fil i listen.</td></tr>`;
+      return;
+    }
+
+    const wf = state.workflow;
+    if (!wf){
+      tbody.innerHTML = `<tr><td colspan="5" class="muted">Ingen workflow funnet for aktiv fil. Klikk "Start ny workflow (aktiv fil)".</td></tr>`;
+      return;
+    }
+
+    for (const s of STEPS){
+      const step = wf.steps[s.key];
+      const tr = document.createElement("tr");
+      const bcf = step?.bcfLink ? `<div class="muted">BCF: ${escapeHtml(step.bcfLink)}</div>` : "";
+      tr.innerHTML = `
+        <td>${s.label}</td>
+        <td>${step ? statusTag(step.result) : `<span class="tag">Ikke signert</span>`}</td>
+        <td>${step ? escapeHtml(step.by || "–") : "–"}</td>
+        <td>${step ? escapeHtml(step.at || "–") : "–"}</td>
+        <td>${step ? escapeHtml(step.comment || "") : ""} ${bcf}</td>
+      `;
+      tbody.appendChild(tr);
+    }
   }
 
-  function downloadText(filename, text, mime="application/json"){
-    const blob = new Blob([text], { type: mime });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = filename.replace(/[^\w.\-() ]+/g, "_");
-    a.click();
-    URL.revokeObjectURL(a.href);
+  async function pullSelectionFromAPI(){
+    try{
+      if (API?.files?.getSelectedFiles){
+        const res = await API.files.getSelectedFiles();
+        return normalizeIncomingSelection({ files: res });
+      }
+    }catch(e){}
+    try{
+      if (API?.extension?.getSelection){
+        const res = await API.extension.getSelection();
+        return normalizeIncomingSelection(res);
+      }
+    }catch(e){}
+    return null;
   }
+
+  // ---------- 3D: set selection from loaded models or from selected objects ----------
+
+  async function setSelectedFromViewerSelection(selectionArg){
+    const sel = selectionArg?.data || selectionArg || [];
+    if (!Array.isArray(sel) || !sel.length) return;
+
+    const modelIds = [...new Set(sel.map(x => x.modelId).filter(Boolean))];
+    const files = [];
+
+    for (const mid of modelIds){
+      try{
+        if (API?.viewer?.getLoadedModel){
+          const f = await API.viewer.getLoadedModel(mid);
+          if (f?.id){
+            files.push({
+              id: f.id,
+              name: f.name || f.fileName || "Ukjent modell",
+              versionId: f.versionId || f.versionID || null
+            });
+          }
+        }
+      }catch(e){}
+    }
+    if (files.length) setSelectedFiles(files);
+  }
+
+  async function setSelectedFromLoadedModels(){
+    try{
+      if (!API?.viewer?.getModels || !API?.viewer?.getLoadedModel){
+        alert("Viewer API mangler getModels/getLoadedModel i dette miljøet.");
+        return;
+      }
+
+      const models = await API.viewer.getModels();
+      const loaded = (models || []).filter(m => (m.state || "").toString().toLowerCase().includes("load") || m.isLoaded === true);
+
+      const files = [];
+      for (const m of loaded){
+        try{
+          const f = await API.viewer.getLoadedModel(m.id);
+          if (f?.id){
+            files.push({
+              id: f.id,
+              name: f.name || m.name || "Ukjent modell",
+              versionId: f.versionId || m.versionId || m.versionID || null
+            });
+          }
+        }catch(e){}
+      }
+
+      if (files.length) setSelectedFiles(files);
+      else alert("Fant ingen lastede modeller i 3D akkurat nå.");
+    }catch(e){
+      console.error(e);
+      alert("Kunne ikke hente lastede modeller fra 3D.");
+    }
+  }
+
+  // ---------- Release package + PDF ----------
 
   function buildReleasePackageFor(fileObj){
     const key = buildStorageKey(state.project?.id ?? "noProject", fileObj.id, fileObj.versionId);
     const wf = loadWorkflow(key);
+
     if (!wf){
       return {
-        schema: "deliverygate-release-package-v2",
+        schema: "deliverygate-release-package-v3",
         generatedAt: nowISO(),
         generatedBy: safeUserDisplay(state.user),
         releaseReady: false,
@@ -434,7 +558,7 @@
     }
 
     return {
-      schema: "deliverygate-release-package-v2",
+      schema: "deliverygate-release-package-v3",
       generatedAt: nowISO(),
       generatedBy: safeUserDisplay(state.user),
       releaseReady: ready,
@@ -508,78 +632,7 @@
     doc.save(fname.replace(/[^\w.\-() ]+/g, "_"));
   }
 
-  function renderActive(){
-    document.getElementById("pillProject").textContent = `Prosjekt: ${state.project?.name ?? "–"}`;
-    document.getElementById("pillUser").textContent = `Bruker: ${safeUserDisplay(state.user)}`;
-
-    const tbody = document.getElementById("logBody");
-    tbody.innerHTML = "";
-
-    if (!state.activeFile){
-      tbody.innerHTML = `<tr><td colspan="5" class="muted">Velg aktiv fil i dropdown eller klikk på fil i listen.</td></tr>`;
-      return;
-    }
-
-    const wf = state.workflow;
-    if (!wf){
-      tbody.innerHTML = `<tr><td colspan="5" class="muted">Ingen workflow funnet for aktiv fil. Klikk "Start ny workflow (aktiv fil)".</td></tr>`;
-      return;
-    }
-
-    for (const s of STEPS){
-      const step = wf.steps[s.key];
-      const tr = document.createElement("tr");
-      const bcf = step?.bcfLink ? `<div class="muted">BCF: ${escapeHtml(step.bcfLink)}</div>` : "";
-      tr.innerHTML = `
-        <td>${s.label}</td>
-        <td>${step ? statusTag(step.result) : `<span class="tag">Ikke signert</span>`}</td>
-        <td>${step ? escapeHtml(step.by || "–") : "–"}</td>
-        <td>${step ? escapeHtml(step.at || "–") : "–"}</td>
-        <td>${step ? escapeHtml(step.comment || "") : ""} ${bcf}</td>
-      `;
-      tbody.appendChild(tr);
-    }
-  }
-
-  function normalizeIncomingSelection(data){
-    // Try to be robust across event payloads:
-    // - data.files
-    // - data.selectedFiles
-    // - data.file (single)
-    // - data (single)
-    const files =
-      data?.files ||
-      data?.selectedFiles ||
-      (data?.file ? [data.file] : null) ||
-      (data?.id ? [data] : null) ||
-      [];
-
-    return files.map(f => ({
-      id: f.id,
-      name: f.name || f.fileName,
-      versionId: f.versionId || f.versionID || null
-    })).filter(f => f.id);
-  }
-
-  async function pullSelectionFromAPI(){
-    // Best-effort: noen Workspaces har en metode for selection/context.
-    // Vi prøver flere uten å feile hvis de ikke finnes.
-    try{
-      if (API?.files?.getSelectedFiles){
-        const res = await API.files.getSelectedFiles();
-        return normalizeIncomingSelection({ files: res });
-      }
-    }catch(e){}
-
-    try{
-      if (API?.extension?.getSelection){
-        const res = await API.extension.getSelection();
-        return normalizeIncomingSelection(res);
-      }
-    }catch(e){}
-
-    return null;
-  }
+  // ---------- Init ----------
 
   async function init(){
     API = await TrimbleConnectWorkspace.connect(window.parent, async (event, data) => {
@@ -587,14 +640,19 @@
         "extension.filesSelected",
         "extension.selectionChanged",
         "extension.fileSelected",
-        "extension.fileViewClicked"
+        "extension.fileViewClicked",
+        "viewer.onSelectionChanged"
       ];
-      if (interesting.includes(event)){
-        const sel = normalizeIncomingSelection(data);
-        if (sel.length){
-          setSelectedFiles(sel);
-        }
+
+      if (!interesting.includes(event)) return;
+
+      if (event === "viewer.onSelectionChanged"){
+        await setSelectedFromViewerSelection(data);
+        return;
       }
+
+      const sel = normalizeIncomingSelection(data);
+      if (sel.length) setSelectedFiles(sel);
     });
 
     state.project = await API.project.getProject();
@@ -604,29 +662,31 @@
     document.getElementById("result").addEventListener("change", toggleBcfUI);
     toggleBcfUI();
 
-    // Button: pull selection explicitly
+    // Explorer: explicit pull
     document.getElementById("btnPullSelection").addEventListener("click", async () => {
       const sel = await pullSelectionFromAPI();
       if (sel && sel.length) setSelectedFiles(sel);
-      else alert("Fant ingen valgte filer via API. Marker filer i Explorer og prøv igjen.");
+      else alert("Fant ingen valgte filer via Explorer-API. Marker filer og prøv igjen.");
+    });
+
+    // 3D: loaded models
+    document.getElementById("btnUseLoaded3D").addEventListener("click", async () => {
+      await setSelectedFromLoadedModels();
     });
 
     // Start workflow for all selected
     document.getElementById("btnStartForAll").addEventListener("click", () => {
-      if (!state.selectedFiles.length) return alert("Velg én eller flere filer i Explorer først.");
+      if (!state.selectedFiles.length) return alert("Velg filer i Explorer eller bruk 3D-knappen først.");
       for (const f of state.selectedFiles){
         const key = buildStorageKey(state.project.id, f.id, f.versionId);
-        const existing = loadWorkflow(key);
-        if (!existing){
-          saveWorkflow(key, newWorkflowFor(f));
-        }
+        if (!loadWorkflow(key)) saveWorkflow(key, newWorkflowFor(f));
       }
       onActiveChanged();
       renderFileList();
       alert("Workflow opprettet for valgte filer (der det ikke fantes fra før).");
     });
 
-    // Start new workflow for active
+    // Active workflow controls
     document.getElementById("btnNewActive").addEventListener("click", () => {
       if (!state.activeFile) return alert("Velg aktiv fil først.");
       const key = buildStorageKey(state.project.id, state.activeFile.id, state.activeFile.versionId);
@@ -656,7 +716,7 @@
       renderFileList();
     });
 
-    // Sign step for active
+    // Sign step
     document.getElementById("btnSign").addEventListener("click", () => {
       clearRuleError();
       if (!state.activeFile) return alert("Velg aktiv fil først.");
@@ -667,8 +727,6 @@
         if (!confirm("Ingen workflow funnet. Opprette ny nå?")) return;
         wf = newWorkflowFor(state.activeFile);
       }
-
-      // update state.workflow (important for rule validation)
       state.workflow = wf;
 
       const stepKey = document.getElementById("step").value;
@@ -702,21 +760,21 @@
       renderFileList();
     });
 
-    // Release-ready JSON for all selected
+    // JSON bundle for all selected
     document.getElementById("btnReportJsonAll").addEventListener("click", () => {
-      if (!state.selectedFiles.length) return alert("Velg filer i Explorer først.");
-      const pkgs = state.selectedFiles.map(f => buildReleasePackageFor(f));
+      if (!state.selectedFiles.length) return alert("Ingen filer i utvalget.");
+      const items = state.selectedFiles.map(f => buildReleasePackageFor(f));
       const bundle = {
         schema: "deliverygate-release-bundle-v1",
         project: { id: state.project.id, name: state.project.name },
         generatedAt: nowISO(),
         generatedBy: safeUserDisplay(state.user),
-        items: pkgs
+        items
       };
       downloadText(`DeliveryGate_release-bundle_${state.project.name}.json`, JSON.stringify(bundle, null, 2));
     });
 
-    // PDF for active
+    // PDF active
     document.getElementById("btnReportPdfActive").addEventListener("click", generatePdfReportForActive);
 
     // token
@@ -731,13 +789,9 @@
       }
     });
 
-    // initial best-effort fetch selection (if extension opened after selection)
+    // initial pull: Explorer selection first, then try loaded 3D models (if running in viewer)
     const initial = await pullSelectionFromAPI();
     if (initial && initial.length) setSelectedFiles(initial);
-    else {
-      document.getElementById("pillSelection").textContent = "Valgte filer: 0";
-      setSelectedFiles([]);
-    }
 
     renderActive();
     renderFileList();
