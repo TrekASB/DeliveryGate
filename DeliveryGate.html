@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>QA Document Workflow</title>
+  <title>DeliveryGate</title>
 
   <!-- Trimble Connect Workspace API -->
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
@@ -14,10 +14,17 @@
   <style>
     :root { --b:#e5e7eb; --t:#111827; --m:#6b7280; --bg:#ffffff; --bg2:#f9fafb; }
     body { font-family: system-ui, Segoe UI, Arial; margin:0; color:var(--t); background:var(--bg); }
-    header { padding:16px 20px; border-bottom:1px solid var(--b); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    header { padding:14px 18px; border-bottom:1px solid var(--b); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
     header h1 { font-size:16px; margin:0; }
     header .pill { font-size:12px; color:var(--m); background:var(--bg2); border:1px solid var(--b); padding:4px 8px; border-radius:999px; }
-    main { padding:16px 20px; display:grid; gap:16px; grid-template-columns: 1.2fr 0.8fr; }
+
+    .brand { display:flex; align-items:center; gap:10px; margin-right:6px; }
+    .brand img { height:22px; width:auto; display:block; }
+    .brand .title { display:flex; flex-direction:column; line-height:1.1; }
+    .brand .title b { font-size:14px; }
+    .brand .title span { font-size:12px; color:var(--m); }
+
+    main { padding:16px 18px; display:grid; gap:16px; grid-template-columns: 1.2fr 0.8fr; }
     @media (max-width: 1000px){ main{ grid-template-columns:1fr; } }
 
     .card { border:1px solid var(--b); border-radius:12px; overflow:hidden; background:#fff; }
@@ -53,7 +60,14 @@
 
 <body>
 <header>
-  <h1>QA Document Workflow</h1>
+  <div class="brand">
+    <img src="./norconsult-logo-black.png" alt="Norconsult" />
+    <div class="title">
+      <b>DeliveryGate</b>
+      <span>Document Workflow / QA</span>
+    </div>
+  </div>
+
   <span class="pill" id="pillProject">Prosjekt: –</span>
   <span class="pill" id="pillUser">Bruker: –</span>
   <span class="pill" id="pillFile">Fil: (velg en fil)</span>
@@ -139,7 +153,7 @@
       <div id="bcfWrap" style="display:none">
         <label for="bcfLink">BCF Topic (påkrevd ved IKKE OK)</label>
         <input id="bcfLink" placeholder="Lim inn URL til topic, eller skriv Topic-ID (f.eks. BCF-1234)" />
-        <div class="muted">Tips: bruk direkte lenke til topic i Trimble Connect/BCF-systemet dere bruker.</div>
+        <div class="muted">Tips: bruk direkte lenke til topic i Trimble Connect / BCF-verktøyet dere bruker.</div>
       </div>
 
       <div>
@@ -155,14 +169,6 @@
       </div>
 
       <div class="muted" id="tokenInfo" style="display:none"></div>
-
-      <details>
-        <summary class="muted">Avansert (backend-lagring – valgfritt)</summary>
-        <div class="muted" style="margin-top:8px">
-          Denne versjonen lagrer i <span class="mono">localStorage</span>. For felles sporbarhet kan du sende logg til API (Azure Function).
-          Koble på <span class="mono">postToBackend(url, payload)</span> med bearer token.
-        </div>
-      </details>
     </div>
   </aside>
 </main>
@@ -173,7 +179,7 @@
   const state = {
     project: null,
     user: null,
-    selectedFile: null, // { id, name, versionId }
+    selectedFile: null,
     storageKey: null,
     workflow: null,
     accessToken: null
@@ -194,7 +200,7 @@
   }
 
   function buildStorageKey(projectId, fileId, versionId){
-    return `qa_workflow::${projectId}::${fileId}::${versionId || "noVersion"}`;
+    return `deliverygate::${projectId}::${fileId}::${versionId || "noVersion"}`;
   }
 
   function loadWorkflow(key){
@@ -209,7 +215,7 @@
   function newWorkflowForSelected(){
     if (!state.project || !state.selectedFile) return null;
     return {
-      schema: "qa-workflow-v2",
+      schema: "deliverygate-workflow-v1",
       createdAt: nowISO(),
       createdBy: safeUserDisplay(state.user),
       fileMeta: {
@@ -241,66 +247,6 @@
     el.textContent = "";
   }
 
-  function render(){
-    document.getElementById("pillProject").textContent = `Prosjekt: ${state.project?.name ?? "–"}`;
-    document.getElementById("pillUser").textContent = `Bruker: ${safeUserDisplay(state.user)}`;
-
-    const hasFile = !!state.selectedFile;
-    document.getElementById("noFile").style.display = hasFile ? "none" : "block";
-    document.getElementById("logWrap").style.display = hasFile ? "block" : "none";
-    document.getElementById("pillFile").textContent = hasFile ? `Fil: ${state.selectedFile.name}` : "Fil: (velg en fil)";
-
-    document.getElementById("metaName").textContent = hasFile ? state.selectedFile.name : "–";
-    document.getElementById("metaId").textContent = hasFile ? (state.selectedFile.id || "–") : "–";
-    document.getElementById("metaVer").textContent = hasFile ? (state.selectedFile.versionId || "–") : "–";
-    document.getElementById("keyLabel").textContent = state.storageKey || "–";
-
-    const tbody = document.getElementById("logBody");
-    tbody.innerHTML = "";
-
-    if (!hasFile) return;
-
-    const wf = state.workflow;
-    if (!wf){
-      tbody.innerHTML = `<tr><td colspan="5" class="muted">Ingen workflow funnet. Klikk "Start ny workflow".</td></tr>`;
-      return;
-    }
-
-    for (const s of STEPS){
-      const step = wf.steps[s.key];
-      const tr = document.createElement("tr");
-      const comment = step?.comment || "";
-      const bcf = step?.bcfLink ? `<div class="muted">BCF: <a href="${escapeAttr(step.bcfLink)}" target="_blank">${escapeHtml(step.bcfLink)}</a></div>` : "";
-      tr.innerHTML = `
-        <td>${s.label}</td>
-        <td>${step ? statusTag(step.result) : `<span class="tag">Ikke signert</span>`}</td>
-        <td>${step ? (escapeHtml(step.by || "–")) : "–"}</td>
-        <td>${step ? (escapeHtml(step.at || "–")) : "–"}</td>
-        <td>${escapeHtml(comment)} ${bcf}</td>
-      `;
-      tbody.appendChild(tr);
-    }
-
-    if (wf.history?.length){
-      const sep = document.createElement("tr");
-      sep.innerHTML = `<td colspan="5" class="muted">Historikk (alle signeringer):</td>`;
-      tbody.appendChild(sep);
-
-      for (const h of wf.history.slice().reverse()){
-        const trh = document.createElement("tr");
-        const bcf = h?.bcfLink ? `<div class="muted">BCF: <a href="${escapeAttr(h.bcfLink)}" target="_blank">${escapeHtml(h.bcfLink)}</a></div>` : "";
-        trh.innerHTML = `
-          <td class="muted">${escapeHtml(h.stepLabel)}</td>
-          <td>${statusTag(h.result)}</td>
-          <td>${escapeHtml(h.by || "–")}</td>
-          <td>${escapeHtml(h.at || "–")}</td>
-          <td>${escapeHtml(h.comment || "")} ${bcf}</td>
-        `;
-        tbody.appendChild(trh);
-      }
-    }
-  }
-
   function escapeHtml(s){
     return (s ?? "").toString()
       .replaceAll("&", "&amp;")
@@ -323,17 +269,13 @@
   function isOk(stepObj){ return stepObj && stepObj.result === "OK"; }
 
   function validateRules(stepKey, result, bcfLink){
-    // 1) IKKE_OK krever BCF
-    if (result === "IKKE_OK"){
-      if (!bcfLink || !bcfLink.trim()){
-        return "Resultat = IKKE OK krever BCF Topic-lenke/ID.";
-      }
+    if (result === "IKKE_OK" && (!bcfLink || !bcfLink.trim())){
+      return "Resultat = IKKE OK krever BCF Topic-lenke/ID.";
     }
 
     const wf = state.workflow;
     const currentUser = safeUserDisplay(state.user);
 
-    // 2) Sidemann != egenkontroll signer
     if (stepKey === "sidemann"){
       const egen = wf?.steps?.egenkontroll;
       if (egen?.by && egen.by === currentUser){
@@ -341,21 +283,18 @@
       }
     }
 
-    // 3) Godkjenning krever kollisjon OK
     if (stepKey === "godkjenning"){
       const koll = wf?.steps?.kollisjon;
       if (!isOk(koll)){
         return "Regelbrudd: Godkjenning kan ikke signeres før Kollisjonskontroll = OK.";
       }
     }
-
     return null;
   }
 
   function buildReleasePackage(){
-    if (!state.workflow) return null;
-
     const wf = state.workflow;
+    if (!wf) return null;
 
     const ready =
       !!wf.steps.egenkontroll &&
@@ -372,12 +311,9 @@
         issues.push(`${s.label}: IKKE OK (BCF: ${step.bcfLink || "mangler"})`);
       }
     }
-    if (wf.steps.godkjenning && !isOk(wf.steps.kollisjon)){
-      issues.push("Godkjenning signert uten kollisjon OK (skal ikke kunne skje).");
-    }
 
     return {
-      schema: "qa-release-package-v1",
+      schema: "deliverygate-release-package-v1",
       generatedAt: nowISO(),
       generatedBy: safeUserDisplay(state.user),
       releaseReady: ready,
@@ -409,7 +345,7 @@
     };
 
     const wf = pkg.workflow;
-    line("QA-rapport (Document Workflow)", 16, true);
+    line("DeliveryGate – QA-rapport", 16, true);
     line(`Generert: ${pkg.generatedAt}`, 10);
     line(`Generert av: ${pkg.generatedBy}`, 10);
     y += 6;
@@ -462,25 +398,54 @@
       }
     }
 
-    const fname = `QA-rapport_${wf.fileMeta.name}_${wf.fileMeta.versionId || "noVersion"}.pdf`;
+    const fname = `DeliveryGate_QA-rapport_${wf.fileMeta.name}_${wf.fileMeta.versionId || "noVersion"}.pdf`;
     doc.save(fname.replace(/[^\w.\-() ]+/g, "_"));
-  }
-
-  async function postToBackend(url, payload){
-    // Koble på senere:
-    // await fetch(url, {
-    //   method:"POST",
-    //   headers:{
-    //     "Content-Type":"application/json",
-    //     "Authorization": state.accessToken ? `Bearer ${state.accessToken}` : undefined
-    //   },
-    //   body: JSON.stringify(payload)
-    // });
   }
 
   function toggleBcfUI(){
     const res = document.getElementById("result").value;
     document.getElementById("bcfWrap").style.display = (res === "IKKE_OK") ? "block" : "none";
+  }
+
+  function render(){
+    document.getElementById("pillProject").textContent = `Prosjekt: ${state.project?.name ?? "–"}`;
+    document.getElementById("pillUser").textContent = `Bruker: ${safeUserDisplay(state.user)}`;
+
+    const hasFile = !!state.selectedFile;
+    document.getElementById("noFile").style.display = hasFile ? "none" : "block";
+    document.getElementById("logWrap").style.display = hasFile ? "block" : "none";
+    document.getElementById("pillFile").textContent = hasFile ? `Fil: ${state.selectedFile.name}` : "Fil: (velg en fil)";
+
+    document.getElementById("metaName").textContent = hasFile ? state.selectedFile.name : "–";
+    document.getElementById("metaId").textContent = hasFile ? (state.selectedFile.id || "–") : "–";
+    document.getElementById("metaVer").textContent = hasFile ? (state.selectedFile.versionId || "–") : "–";
+    document.getElementById("keyLabel").textContent = state.storageKey || "–";
+
+    const tbody = document.getElementById("logBody");
+    tbody.innerHTML = "";
+
+    if (!hasFile) return;
+
+    const wf = state.workflow;
+    if (!wf){
+      tbody.innerHTML = `<tr><td colspan="5" class="muted">Ingen workflow funnet. Klikk "Start ny workflow".</td></tr>`;
+      return;
+    }
+
+    for (const s of STEPS){
+      const step = wf.steps[s.key];
+      const tr = document.createElement("tr");
+      const comment = step?.comment || "";
+      const bcf = step?.bcfLink ? `<div class="muted">BCF: <a href="${escapeAttr(step.bcfLink)}" target="_blank">${escapeHtml(step.bcfLink)}</a></div>` : "";
+      tr.innerHTML = `
+        <td>${s.label}</td>
+        <td>${step ? statusTag(step.result) : `<span class="tag">Ikke signert</span>`}</td>
+        <td>${step ? escapeHtml(step.by || "–") : "–"}</td>
+        <td>${step ? escapeHtml(step.at || "–") : "–"}</td>
+        <td>${escapeHtml(comment)} ${bcf}</td>
+      `;
+      tbody.appendChild(tr);
+    }
   }
 
   async function init(){
@@ -538,14 +503,10 @@
       const result = document.getElementById("result").value;
       const comment = document.getElementById("comment").value.trim();
       const bcfLink = document.getElementById("bcfLink").value.trim();
-
       const stepLabel = STEPS.find(x => x.key === stepKey)?.label ?? stepKey;
 
       const ruleErr = validateRules(stepKey, result, bcfLink);
-      if (ruleErr){
-        showRuleError(ruleErr);
-        return;
-      }
+      if (ruleErr){ showRuleError(ruleErr); return; }
 
       const signed = {
         stepKey,
@@ -562,6 +523,7 @@
       state.workflow.history.push(signed);
 
       saveWorkflow(state.storageKey, state.workflow);
+
       document.getElementById("comment").value = "";
       document.getElementById("bcfLink").value = "";
       toggleBcfUI();
@@ -570,11 +532,7 @@
 
     document.getElementById("btnExport").addEventListener("click", () => {
       if (!state.workflow) return alert("Ingen workflow å eksportere.");
-      downloadText(
-        `qa-workflow_${state.selectedFile?.name || "file"}.json`,
-        JSON.stringify(state.workflow, null, 2),
-        "application/json"
-      );
+      downloadText(`DeliveryGate_workflow_${state.selectedFile?.name || "file"}.json`, JSON.stringify(state.workflow, null, 2));
     });
 
     document.getElementById("btnImport").addEventListener("click", async () => {
@@ -587,7 +545,7 @@
         if (!file) return;
         const text = await file.text();
         const obj = JSON.parse(text);
-        if (!obj?.schema?.startsWith("qa-workflow-")) return alert("Ugyldig fil (schema mismatch).");
+        if (!obj?.schema?.startsWith("deliverygate-")) return alert("Ugyldig fil (schema mismatch).");
         state.workflow = obj;
         saveWorkflow(state.storageKey, state.workflow);
         clearRuleError();
@@ -599,14 +557,15 @@
     document.getElementById("btnReportJson").addEventListener("click", () => {
       if (!state.workflow) return alert("Ingen workflow å rapportere.");
       const pkg = buildReleasePackage();
-      const fname = `qa-release-package_${state.selectedFile?.name || "file"}_${state.selectedFile?.versionId || "noVersion"}.json`;
-      downloadText(fname, JSON.stringify(pkg, null, 2), "application/json");
+      downloadText(
+        `DeliveryGate_release-package_${state.selectedFile?.name || "file"}_${state.selectedFile?.versionId || "noVersion"}.json`,
+        JSON.stringify(pkg, null, 2)
+      );
     });
 
     document.getElementById("btnReportPdf").addEventListener("click", () => {
       if (!state.workflow) return alert("Ingen workflow å rapportere.");
-      const pkg = buildReleasePackage();
-      generatePdfReport(pkg);
+      generatePdfReport(buildReleasePackage());
     });
 
     document.getElementById("btnToken").addEventListener("click", async () => {
@@ -623,7 +582,7 @@
 
   init().catch(err => {
     console.error(err);
-    alert("Kunne ikke starte extension. Se console for detaljer.");
+    alert("Kunne ikke starte DeliveryGate. Se console for detaljer.");
   });
 </script>
 </body>
