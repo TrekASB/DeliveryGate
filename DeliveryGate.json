@@ -1,6 +1,7 @@
 {
-  "title": "DeliveryGate (QA)",
+  "title": "DeliveryGate",
   "url": "https://trekasb.github.io/DeliveryGate/DeliveryGate.html",
   "icon": "https://trekasb.github.io/DeliveryGate/DeliveryGate.png",
-  "type": "project"
+  "type": "viewer",
+  "infoUrl": "https://trekasb.github.io/DeliveryGate/help.html"
 }
