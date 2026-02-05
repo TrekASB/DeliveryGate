@@ -58,7 +58,6 @@
     .filelist li:last-child { border-bottom:none; }
     .filelist .name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 78%; }
     .filelist .mini { font-size:12px; color:var(--m); }
-    a { color: inherit; }
   </style>
 </head>
 
@@ -68,21 +67,27 @@
     <img src="./norconsult-logo-black.png" alt="Norconsult" />
     <div class="title">
       <b>DeliveryGate</b>
-      <span>QA / Release gate (Explorer + 3D)</span>
+      <span>QA / Release gate (primært 3D)</span>
     </div>
   </div>
 
   <span class="pill" id="pillProject">Prosjekt: –</span>
   <span class="pill" id="pillUser">Bruker: –</span>
-  <span class="pill" id="pillSelection">Valgte filer: 0</span>
+  <span class="pill" id="pillSelection">Filer i scope: 0</span>
+  <span class="pill" id="pillMode">Mode: –</span>
 </header>
 
 <main>
   <section class="card">
-    <h2>Valgte filer og workflow</h2>
+    <h2>Scope (3D lastede modeller) + workflow</h2>
     <div class="content">
 
       <div class="warn">
+        <b>Hvordan velger du “scope” i 3D:</b>
+        <ul style="margin:6px 0 0 16px; padding:0;">
+          <li>Trykk <b>“Bruk lastede modeller (3D)”</b> for å hente alle modeller som er lastet i viewer.</li>
+          <li>Eller klikk et objekt i 3D – da prøver DeliveryGate å finne filen modellen kommer fra.</li>
+        </ul>
         <b>Regelsett:</b>
         <ul style="margin:6px 0 0 16px; padding:0;">
           <li>Sidemannskontroll kan ikke signeres av samme person som signerte egenkontroll.</li>
@@ -92,20 +97,20 @@
       </div>
 
       <div class="row">
-        <button class="btn" id="btnPullSelection">Hent valgte filer (Explorer)</button>
         <button class="btn" id="btnUseLoaded3D">Bruk lastede modeller (3D)</button>
-        <button class="btn primary" id="btnStartForAll">Start kontroll (opprett workflow for alle)</button>
-        <button class="btn" id="btnReportJsonAll">Release-ready JSON (alle)</button>
+        <button class="btn" id="btnUse3DSelection">Bruk valgt(e) objekt i 3D</button>
+        <button class="btn primary" id="btnStartForAll">Start kontroll (opprett workflow for alle i scope)</button>
+        <button class="btn" id="btnReportJsonAll">Release-ready JSON (alle i scope)</button>
         <button class="btn" id="btnReportPdfActive">QA-PDF (aktiv fil)</button>
       </div>
 
       <div class="filelist">
         <div class="head">
-          <span>Utvalg (Explorer/3D)</span>
+          <span>Scope-filer</span>
           <span class="mini" id="activeHint">Aktiv: –</span>
         </div>
         <ul id="fileUl">
-          <li class="muted">Velg filer i Explorer eller bruk 3D-knappen.</li>
+          <li class="muted">Trykk “Bruk lastede modeller (3D)” for å fylle listen.</li>
         </ul>
       </div>
 
@@ -127,7 +132,7 @@
               </tr>
             </thead>
             <tbody id="logBody">
-              <tr><td colspan="5" class="muted">Ingen aktiv fil valgt ennå.</td></tr>
+              <tr><td colspan="5" class="muted">Velg en aktiv fil i dropdown eller klikk på en fil i listen.</td></tr>
             </tbody>
           </table>
 
@@ -143,7 +148,7 @@
     <div class="content">
 
       <div>
-        <label for="activeFileSelect">Aktiv fil (fra utvalg)</label>
+        <label for="activeFileSelect">Aktiv fil (fra scope)</label>
         <select id="activeFileSelect"></select>
         <div class="muted">Signering gjelder alltid “aktiv fil”.</div>
       </div>
@@ -203,11 +208,12 @@
   const state = {
     project: null,
     user: null,
-    selectedFiles: [],   // [{id,name,versionId}]
-    activeFileKey: null, // `${id}::${versionId||noVersion}`
+    selectedFiles: [],     // scope: [{id,name,versionId}]
+    activeFileKey: null,   // `${id}::${versionId||noVersion}`
     activeFile: null,
     workflow: null,
-    accessToken: null
+    accessToken: null,
+    runtimeMode: "unknown" // viewer/project/unknown
   };
 
   function nowISO(){ return new Date().toISOString(); }
@@ -224,7 +230,7 @@
 
   function newWorkflowFor(fileObj){
     return {
-      schema: "deliverygate-workflow-v3",
+      schema: "deliverygate-workflow-v4",
       createdAt: nowISO(),
       createdBy: safeUserDisplay(state.user),
       fileMeta: {
@@ -305,22 +311,7 @@
     URL.revokeObjectURL(a.href);
   }
 
-  // ---------- Selection handling (Explorer + viewer) ----------
-
-  function normalizeIncomingSelection(data){
-    const files =
-      data?.files ||
-      data?.selectedFiles ||
-      (data?.file ? [data.file] : null) ||
-      (data?.id ? [data] : null) ||
-      [];
-
-    return files.map(f => ({
-      id: f.id,
-      name: f.name || f.fileName,
-      versionId: f.versionId || f.versionID || null
-    })).filter(f => f.id);
-  }
+  // ---------- Scope handling ----------
 
   function setSelectedFiles(files){
     const map = new Map();
@@ -332,7 +323,7 @@
     }
     state.selectedFiles = Array.from(map.values());
 
-    document.getElementById("pillSelection").textContent = `Valgte filer: ${state.selectedFiles.length}`;
+    document.getElementById("pillSelection").textContent = `Filer i scope: ${state.selectedFiles.length}`;
 
     const sel = document.getElementById("activeFileSelect");
     sel.innerHTML = "";
@@ -340,7 +331,7 @@
     if (!state.selectedFiles.length){
       const opt = document.createElement("option");
       opt.value = "";
-      opt.textContent = "— ingen filer valgt —";
+      opt.textContent = "— ingen filer i scope —";
       sel.appendChild(opt);
       state.activeFile = null;
       state.activeFileKey = null;
@@ -394,7 +385,7 @@
     ul.innerHTML = "";
 
     if (!state.selectedFiles.length){
-      ul.innerHTML = `<li class="muted">Velg filer i Explorer eller bruk 3D-knappen.</li>`;
+      ul.innerHTML = `<li class="muted">Ingen filer i scope. Trykk “Bruk lastede modeller (3D)”.</li>`;
       return;
     }
 
@@ -421,18 +412,19 @@
   function renderActive(){
     document.getElementById("pillProject").textContent = `Prosjekt: ${state.project?.name ?? "–"}`;
     document.getElementById("pillUser").textContent = `Bruker: ${safeUserDisplay(state.user)}`;
+    document.getElementById("pillMode").textContent = `Mode: ${state.runtimeMode}`;
 
     const tbody = document.getElementById("logBody");
     tbody.innerHTML = "";
 
     if (!state.activeFile){
-      tbody.innerHTML = `<tr><td colspan="5" class="muted">Velg aktiv fil i dropdown eller klikk på fil i listen.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="muted">Velg en aktiv fil i dropdown eller klikk på en fil i listen.</td></tr>`;
       return;
     }
 
     const wf = state.workflow;
     if (!wf){
-      tbody.innerHTML = `<tr><td colspan="5" class="muted">Ingen workflow funnet for aktiv fil. Klikk "Start ny workflow (aktiv fil)".</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="muted">Ingen workflow funnet. Klikk “Start ny workflow (aktiv fil)” eller “Start kontroll (alle)”.</td></tr>`;
       return;
     }
 
@@ -451,81 +443,123 @@
     }
   }
 
-  async function pullSelectionFromAPI(){
-    try{
-      if (API?.files?.getSelectedFiles){
-        const res = await API.files.getSelectedFiles();
-        return normalizeIncomingSelection({ files: res });
-      }
-    }catch(e){}
-    try{
-      if (API?.extension?.getSelection){
-        const res = await API.extension.getSelection();
-        return normalizeIncomingSelection(res);
-      }
-    }catch(e){}
-    return null;
+  // ---------- 3D helpers ----------
+
+  function viewerAvailable(){
+    return !!(API?.viewer);
   }
 
-  // ---------- 3D: set selection from loaded models or from selected objects ----------
+  async function setScopeFromLoadedModels3D(){
+    if (!viewerAvailable()) {
+      alert("Viewer API er ikke tilgjengelig. Sørg for at extensionen er installert som type=viewer og åpnet i 3D.");
+      return;
+    }
 
-  async function setSelectedFromViewerSelection(selectionArg){
-    const sel = selectionArg?.data || selectionArg || [];
-    if (!Array.isArray(sel) || !sel.length) return;
+    if (!API.viewer.getModels || !API.viewer.getLoadedModel){
+      alert("Viewer API mangler getModels/getLoadedModel i dette miljøet.");
+      return;
+    }
 
-    const modelIds = [...new Set(sel.map(x => x.modelId).filter(Boolean))];
+    const models = await API.viewer.getModels();
+    const loaded = (models || []).filter(m => {
+      const s = (m.state || "").toString().toLowerCase();
+      return s.includes("load") || m.isLoaded === true;
+    });
+
+    const files = [];
+    for (const m of loaded){
+      try{
+        const f = await API.viewer.getLoadedModel(m.id);
+        if (f?.id){
+          files.push({
+            id: f.id,
+            name: f.name || m.name || "Ukjent modell",
+            versionId: f.versionId || f.versionID || m.versionId || m.versionID || null
+          });
+        }
+      }catch(e){}
+    }
+
+    if (!files.length){
+      alert("Fant ingen lastede modeller i 3D akkurat nå. Last inn modeller først.");
+      return;
+    }
+    setSelectedFiles(files);
+  }
+
+  async function setScopeFrom3DSelection(){
+    if (!viewerAvailable()) {
+      alert("Viewer API er ikke tilgjengelig. Åpne extension i 3D viewer.");
+      return;
+    }
+
+    // Best-effort: hent selection via event-data hvis vi har det, ellers prøv via API hvis støttet
+    let sel = null;
+
+    try{
+      if (API.viewer.getSelection){
+        sel = await API.viewer.getSelection();
+      }
+    }catch(e){}
+
+    // sel kan være [] eller et objekt; vi håndterer begge
+    const list = sel?.data || sel || [];
+    if (!Array.isArray(list) || !list.length){
+      alert("Ingen objekter valgt i 3D. Klikk et objekt i modellen først.");
+      return;
+    }
+
+    const modelIds = [...new Set(list.map(x => x.modelId).filter(Boolean))];
     const files = [];
 
     for (const mid of modelIds){
       try{
-        if (API?.viewer?.getLoadedModel){
-          const f = await API.viewer.getLoadedModel(mid);
-          if (f?.id){
-            files.push({
-              id: f.id,
-              name: f.name || f.fileName || "Ukjent modell",
-              versionId: f.versionId || f.versionID || null
-            });
-          }
+        const f = await API.viewer.getLoadedModel(mid);
+        if (f?.id){
+          files.push({
+            id: f.id,
+            name: f.name || f.fileName || "Ukjent modell",
+            versionId: f.versionId || f.versionID || null
+          });
         }
       }catch(e){}
     }
+
+    if (!files.length){
+      alert("Kunne ikke mappe 3D-valg til lastet modellfil. Prøv “Bruk lastede modeller (3D)”.");
+      return;
+    }
+
+    setSelectedFiles(files);
+  }
+
+  async function handleViewerSelectionEvent(data){
+    // data kan være {data:[{modelId,objectRuntimeIds...},...]} eller direkte array
+    const list = data?.data || data || [];
+    if (!Array.isArray(list) || !list.length) return;
+
+    if (!viewerAvailable() || !API.viewer.getLoadedModel) return;
+
+    const modelIds = [...new Set(list.map(x => x.modelId).filter(Boolean))];
+    const files = [];
+
+    for (const mid of modelIds){
+      try{
+        const f = await API.viewer.getLoadedModel(mid);
+        if (f?.id){
+          files.push({
+            id: f.id,
+            name: f.name || f.fileName || "Ukjent modell",
+            versionId: f.versionId || f.versionID || null
+          });
+        }
+      }catch(e){}
+    }
+
     if (files.length) setSelectedFiles(files);
   }
 
-  async function setSelectedFromLoadedModels(){
-    try{
-      if (!API?.viewer?.getModels || !API?.viewer?.getLoadedModel){
-        alert("Viewer API mangler getModels/getLoadedModel i dette miljøet.");
-        return;
-      }
-
-      const models = await API.viewer.getModels();
-      const loaded = (models || []).filter(m => (m.state || "").toString().toLowerCase().includes("load") || m.isLoaded === true);
-
-      const files = [];
-      for (const m of loaded){
-        try{
-          const f = await API.viewer.getLoadedModel(m.id);
-          if (f?.id){
-            files.push({
-              id: f.id,
-              name: f.name || m.name || "Ukjent modell",
-              versionId: f.versionId || m.versionId || m.versionID || null
-            });
-          }
-        }catch(e){}
-      }
-
-      if (files.length) setSelectedFiles(files);
-      else alert("Fant ingen lastede modeller i 3D akkurat nå.");
-    }catch(e){
-      console.error(e);
-      alert("Kunne ikke hente lastede modeller fra 3D.");
-    }
-  }
-
-  // ---------- Release package + PDF ----------
+  // ---------- Release packages + PDF ----------
 
   function buildReleasePackageFor(fileObj){
     const key = buildStorageKey(state.project?.id ?? "noProject", fileObj.id, fileObj.versionId);
@@ -533,7 +567,7 @@
 
     if (!wf){
       return {
-        schema: "deliverygate-release-package-v3",
+        schema: "deliverygate-release-package-v4",
         generatedAt: nowISO(),
         generatedBy: safeUserDisplay(state.user),
         releaseReady: false,
@@ -558,7 +592,7 @@
     }
 
     return {
-      schema: "deliverygate-release-package-v3",
+      schema: "deliverygate-release-package-v4",
       generatedAt: nowISO(),
       generatedBy: safeUserDisplay(state.user),
       releaseReady: ready,
@@ -636,57 +670,80 @@
 
   async function init(){
     API = await TrimbleConnectWorkspace.connect(window.parent, async (event, data) => {
-      const interesting = [
+      // Explorer events (kan forekomme hvis du åpner extension fra project-siden)
+      const explorerEvents = [
         "extension.filesSelected",
         "extension.selectionChanged",
         "extension.fileSelected",
-        "extension.fileViewClicked",
-        "viewer.onSelectionChanged"
+        "extension.fileViewClicked"
       ];
 
-      if (!interesting.includes(event)) return;
+      // Viewer events (navn kan variere litt mellom UI-versjoner, så vi lytter på flere)
+      const viewerEvents = [
+        "viewer.onSelectionChanged",
+        "viewer.selectionChanged",
+        "viewer.onSelection"
+      ];
 
-      if (event === "viewer.onSelectionChanged"){
-        await setSelectedFromViewerSelection(data);
+      if (viewerEvents.includes(event)){
+        state.runtimeMode = "viewer";
+        await handleViewerSelectionEvent(data);
+        renderActive();
         return;
       }
 
-      const sel = normalizeIncomingSelection(data);
-      if (sel.length) setSelectedFiles(sel);
+      if (explorerEvents.includes(event)){
+        state.runtimeMode = "project";
+        // vi ignorerer dette for din use-case, men lar det stå (kan være nyttig)
+        // const sel = normalizeIncomingSelection(data);
+        // if (sel.length) setSelectedFiles(sel);
+        renderActive();
+        return;
+      }
     });
 
     state.project = await API.project.getProject();
     state.user = await API.user.getUser();
 
+    // Bestem runtime-mode basert på tilgjengelig API
+    state.runtimeMode = viewerAvailable() ? "viewer" : "project";
+
     document.getElementById("activeFileSelect").addEventListener("change", onActiveChanged);
     document.getElementById("result").addEventListener("change", toggleBcfUI);
     toggleBcfUI();
 
-    // Explorer: explicit pull
-    document.getElementById("btnPullSelection").addEventListener("click", async () => {
-      const sel = await pullSelectionFromAPI();
-      if (sel && sel.length) setSelectedFiles(sel);
-      else alert("Fant ingen valgte filer via Explorer-API. Marker filer og prøv igjen.");
-    });
-
-    // 3D: loaded models
     document.getElementById("btnUseLoaded3D").addEventListener("click", async () => {
-      await setSelectedFromLoadedModels();
+      try{
+        await setScopeFromLoadedModels3D();
+      }catch(e){
+        console.error(e);
+        alert("Feil ved henting av lastede modeller. Sjekk console.");
+      }
     });
 
-    // Start workflow for all selected
+    document.getElementById("btnUse3DSelection").addEventListener("click", async () => {
+      try{
+        await setScopeFrom3DSelection();
+      }catch(e){
+        console.error(e);
+        alert("Feil ved henting av 3D-valg. Sjekk console.");
+      }
+    });
+
     document.getElementById("btnStartForAll").addEventListener("click", () => {
-      if (!state.selectedFiles.length) return alert("Velg filer i Explorer eller bruk 3D-knappen først.");
+      if (!state.selectedFiles.length){
+        alert("Ingen filer i scope. Trykk “Bruk lastede modeller (3D)” først.");
+        return;
+      }
       for (const f of state.selectedFiles){
         const key = buildStorageKey(state.project.id, f.id, f.versionId);
         if (!loadWorkflow(key)) saveWorkflow(key, newWorkflowFor(f));
       }
       onActiveChanged();
       renderFileList();
-      alert("Workflow opprettet for valgte filer (der det ikke fantes fra før).");
+      alert("Workflow opprettet for alle filer i scope (der det ikke fantes fra før).");
     });
 
-    // Active workflow controls
     document.getElementById("btnNewActive").addEventListener("click", () => {
       if (!state.activeFile) return alert("Velg aktiv fil først.");
       const key = buildStorageKey(state.project.id, state.activeFile.id, state.activeFile.versionId);
@@ -716,7 +773,6 @@
       renderFileList();
     });
 
-    // Sign step
     document.getElementById("btnSign").addEventListener("click", () => {
       clearRuleError();
       if (!state.activeFile) return alert("Velg aktiv fil først.");
@@ -760,12 +816,11 @@
       renderFileList();
     });
 
-    // JSON bundle for all selected
     document.getElementById("btnReportJsonAll").addEventListener("click", () => {
-      if (!state.selectedFiles.length) return alert("Ingen filer i utvalget.");
+      if (!state.selectedFiles.length) return alert("Ingen filer i scope.");
       const items = state.selectedFiles.map(f => buildReleasePackageFor(f));
       const bundle = {
-        schema: "deliverygate-release-bundle-v1",
+        schema: "deliverygate-release-bundle-v2",
         project: { id: state.project.id, name: state.project.name },
         generatedAt: nowISO(),
         generatedBy: safeUserDisplay(state.user),
@@ -774,10 +829,8 @@
       downloadText(`DeliveryGate_release-bundle_${state.project.name}.json`, JSON.stringify(bundle, null, 2));
     });
 
-    // PDF active
     document.getElementById("btnReportPdfActive").addEventListener("click", generatePdfReportForActive);
 
-    // token
     document.getElementById("btnToken").addEventListener("click", async () => {
       try{
         state.accessToken = await API.extension.requestPermission("accesstoken");
@@ -789,12 +842,18 @@
       }
     });
 
-    // initial pull: Explorer selection first, then try loaded 3D models (if running in viewer)
-    const initial = await pullSelectionFromAPI();
-    if (initial && initial.length) setSelectedFiles(initial);
-
+    // Auto: hvis vi er i viewer, prøv å hente lastede modeller ved oppstart (best-effort)
     renderActive();
     renderFileList();
+
+    if (state.runtimeMode === "viewer"){
+      try{
+        await setScopeFromLoadedModels3D();
+      }catch(e){
+        // Ikke spamme med alerts her; bruker kan trykke knappen
+        console.warn("Auto-hent lastede modeller feilet:", e);
+      }
+    }
   }
 
   init().catch(err => {
