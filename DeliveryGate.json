@@ -1,6 +1,6 @@
 {
-  "id": "deliverygate",
-  "name": "DeliveryGate",
   "url": "https://trekasb.github.io/DeliveryGate/DeliveryGate.html",
-  "icon": "https://trekasb.github.io/DeliveryGate/DeliveryGate.png"
+  "title": "DeliveryGate",
+  "icon": "https://trekasb.github.io/DeliveryGate/DeliveryGate.png",
+  "infoUrl": "https://trekasb.github.io/DeliveryGate/help.html"
 }
